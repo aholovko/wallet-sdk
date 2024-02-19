@@ -669,11 +669,7 @@ func TestIssuerInitiatedInteraction_RequestCredential(t *testing.T) {
 
 			issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
 
-			config := getTestClientConfig(t)
-
-			interaction, err := openid4ci.NewIssuerInitiatedInteraction(
-				createCredentialOfferIssuanceURI(t, server.URL, false, true), config)
-			require.NoError(t, err)
+			interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, server.URL, false, true))
 
 			credentials, err := interaction.RequestCredentialWithPreAuth(&jwtSignerMock{
 				keyID: mockKeyID,
@@ -1771,7 +1767,23 @@ func TestIssuerInitiatedInteraction_RequestCredential(t *testing.T) {
 }
 
 func TestIssuerInitiatedInteraction_GrantTypes(t *testing.T) {
-	interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, "example.com", false, true))
+	issuerServerHandler := &mockIssuerServerHandler{
+		t:                  t,
+		credentialResponse: sampleCredentialResponse,
+	}
+
+	server := httptest.NewServer(issuerServerHandler)
+	defer server.Close()
+
+	issuerServerHandler.openIDConfig = &openid4ci.OpenIDConfig{
+		TokenEndpoint: fmt.Sprintf("%s/oidc/token", server.URL),
+	}
+
+	issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
+
+	requestURI := createCredentialOfferIssuanceURI(t, server.URL, false, true)
+	interaction := newIssuerInitiatedInteraction(t, requestURI)
+	require.NotNil(t, interaction)
 
 	require.True(t, interaction.PreAuthorizedCodeGrantTypeSupported())
 
@@ -1788,7 +1800,8 @@ func TestIssuerInitiatedInteraction_GrantTypes(t *testing.T) {
 		"INVALID_SDK_USAGE(OCI3-0000):issuer does not support the authorization code grant")
 	require.Nil(t, authorizationCodeGrantParams)
 
-	interaction = newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, "example.com", true, true))
+	requestURI = createCredentialOfferIssuanceURI(t, server.URL, true, true)
+	interaction = newIssuerInitiatedInteraction(t, requestURI)
 
 	require.True(t, interaction.AuthorizationCodeGrantTypeSupported())
 
@@ -1812,11 +1825,7 @@ func TestIssuerInitiatedInteraction_DynamicClientRegistration(t *testing.T) {
 		server := httptest.NewServer(issuerServerHandler)
 		defer server.Close()
 
-		config := getTestClientConfig(t)
-
-		requestURI := createCredentialOfferIssuanceURI(t, server.URL, false, true)
-		interaction, err := openid4ci.NewIssuerInitiatedInteraction(requestURI, config)
-		require.NoError(t, err)
+		interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, server.URL, false, true))
 		require.NotNil(t, interaction)
 
 		supported, err := interaction.DynamicClientRegistrationSupported()
@@ -1893,11 +1902,7 @@ func TestIssuerInitiatedInteraction_IssuerURI(t *testing.T) {
 
 	issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
 
-	config := getTestClientConfig(t)
-
-	interaction, err := openid4ci.NewIssuerInitiatedInteraction(
-		createCredentialOfferIssuanceURI(t, server.URL, false, true), config)
-	require.NoError(t, err)
+	interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, server.URL, false, true))
 
 	require.Equal(t, server.URL, interaction.IssuerURI())
 }
