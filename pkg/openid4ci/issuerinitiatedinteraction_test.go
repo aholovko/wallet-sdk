@@ -1808,11 +1808,11 @@ func TestIssuerInitiatedInteraction_DynamicClientRegistration(t *testing.T) {
 			"with response body test failure instead")
 		require.False(t, supported)
 
-		endpoint, err := interaction.DynamicClientRegistrationEndpoint()
+		endpointResolved, err := interaction.DynamicClientRegistrationEndpoint()
 		require.EqualError(t, err, "ISSUER_OPENID_CONFIG_FETCH_FAILED(OCI1-0003):failed to fetch issuer's "+
 			"OpenID configuration: openid configuration endpoint: expected status code 200 but got status code 500 "+
 			"with response body test failure instead")
-		require.Empty(t, endpoint)
+		require.Empty(t, endpointResolved)
 	})
 	t.Run("Dynamic client registration is not supported", func(t *testing.T) {
 		issuerServerHandler := &mockIssuerServerHandler{
@@ -1831,10 +1831,10 @@ func TestIssuerInitiatedInteraction_DynamicClientRegistration(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, supported)
 
-		endpoint, err := interaction.DynamicClientRegistrationEndpoint()
+		endpointResolved, err := interaction.DynamicClientRegistrationEndpoint()
 		require.EqualError(t, err,
 			"INVALID_SDK_USAGE(OCI3-0000):issuer does not support dynamic client registration")
-		require.Empty(t, endpoint)
+		require.Empty(t, endpointResolved)
 	})
 	t.Run("Dynamic client registration is supported", func(t *testing.T) {
 		issuerServerHandler := &mockIssuerServerHandler{
@@ -1855,9 +1855,9 @@ func TestIssuerInitiatedInteraction_DynamicClientRegistration(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, supported)
 
-		endpoint, err := interaction.DynamicClientRegistrationEndpoint()
+		endpointResolved, err := interaction.DynamicClientRegistrationEndpoint()
 		require.NoError(t, err)
-		require.Equal(t, testEndpoint, endpoint)
+		require.Equal(t, testEndpoint, endpointResolved)
 	})
 }
 
@@ -1926,6 +1926,7 @@ func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
 		require.NoError(t, err)
 
 		_, publicKey, err := localKMS.Create(arieskms.ED25519Type)
+		require.NoError(t, err)
 
 		didResolver := &mockResolver{keyWriter: localKMS, pubJWK: publicKey}
 
@@ -1942,7 +1943,8 @@ func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
 		claims := map[string]interface{}{}
 
 		data := fmt.Sprintf(`{"well_known_openid_issuer_configuration": %s}`, sampleIssuerMetadata)
-		json.Unmarshal([]byte(data), &claims)
+		err = json.Unmarshal([]byte(data), &claims)
+		require.NoError(t, err)
 
 		token, err := jwt.NewSigned(claims, jwt.SignParameters{
 			KeyID:             publicKey.KeyID,
@@ -1951,10 +1953,10 @@ func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
 		}, signer)
 		require.NoError(t, err)
 
-		tokenBytes, err := token.Serialize(false)
+		tokenSerialised, err := token.Serialize(false)
 		require.NoError(t, err)
 
-		issuerServerHandler.issuerMetadata = fmt.Sprintf(`{"signed_metadata": "%s"}`, tokenBytes)
+		issuerServerHandler.issuerMetadata = fmt.Sprintf(`{"signed_metadata": %q}`, tokenSerialised)
 
 		credentialOfferIssuanceURI := createCredentialOfferIssuanceURI(t, server.URL, false, true)
 
@@ -2010,11 +2012,13 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func makeMockDoc(keyWriter api.KeyWriter, pubJWK *jwk.JWK) (*did.Doc, error) {
 	if pubJWK == nil {
 		var err error
+
 		_, pubJWK, err = keyWriter.Create(arieskms.ED25519Type)
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	pkb, err := pubJWK.PublicKeyBytes()
 	if err != nil {
 		return nil, err
