@@ -7,10 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package openid4ci_test
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -287,10 +289,23 @@ func TestNewIssuerInitiatedInteraction(t *testing.T) {
 
 		credentialOfferIssuanceURI := "openid-credential-offer://?credential_offer=" + credentialOfferEscaped
 
-		interaction, err := openid4ci.NewIssuerInitiatedInteraction(credentialOfferIssuanceURI, getTestClientConfig(t))
+		clientConfig := getTestClientConfig(t)
+		clientConfig.HTTPClient = &http.Client{
+			Transport: &mockTransport{
+				roundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewBufferString(sampleIssuerMetadata)),
+					}, nil
+				},
+			},
+		}
+
+		interaction, err := openid4ci.NewIssuerInitiatedInteraction(credentialOfferIssuanceURI, clientConfig)
 		require.EqualError(t, err, "no supported grant types found")
 		require.Nil(t, interaction)
 	})
+
 	t.Run("Invalid credential configuration id", func(t *testing.T) {
 		credentialOffer := createSampleCredentialOffer(t, false, true)
 
@@ -303,7 +318,19 @@ func TestNewIssuerInitiatedInteraction(t *testing.T) {
 
 		credentialOfferIssuanceURI := "openid-credential-offer://?credential_offer=" + credentialOfferEscaped
 
-		interaction, err := openid4ci.NewIssuerInitiatedInteraction(credentialOfferIssuanceURI, getTestClientConfig(t))
+		clientConfig := getTestClientConfig(t)
+		clientConfig.HTTPClient = &http.Client{
+			Transport: &mockTransport{
+				roundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewBufferString(sampleIssuerMetadata)),
+					}, nil
+				},
+			},
+		}
+
+		interaction, err := openid4ci.NewIssuerInitiatedInteraction(credentialOfferIssuanceURI, clientConfig)
 		require.EqualError(t, err, "INVALID_CREDENTIAL_CONFIGURATION_ID(OCI0-0022):invalid credential configuration "+
 			"ID (invalid_configuration_id) in credential offer")
 		require.Nil(t, interaction)
@@ -1951,16 +1978,6 @@ func getTestClientConfig(t *testing.T) *openid4ci.ClientConfig {
 		DIDResolver:                      didResolver,
 		DisableVCProofChecks:             true,
 		NetworkDocumentLoaderHTTPTimeout: &networkDocumentLoaderHTTPTimeout,
-		//HTTPClient: &http.Client{
-		//	Transport: &mockTransport{
-		//		roundTripFunc: func(req *http.Request) (*http.Response, error) {
-		//			return &http.Response{
-		//				StatusCode: http.StatusOK,
-		//				Body:       io.NopCloser(bytes.NewBufferString(sampleIssuerMetadata)),
-		//			}, nil
-		//		},
-		//	},
-		//},
 	}
 }
 
