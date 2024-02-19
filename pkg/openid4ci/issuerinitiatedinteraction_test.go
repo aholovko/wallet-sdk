@@ -7,10 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package openid4ci_test
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -51,6 +53,9 @@ var (
 
 	//go:embed testdata/sample_signed_issuer_metadata.jwt
 	sampleSignedIssuerMetadata string
+
+	//go:embed testdata/sample_issuer_metadata.json
+	sampleIssuerMetadata string
 )
 
 type mockIssuerServerHandler struct {
@@ -190,8 +195,6 @@ func TestNewIssuerInitiatedInteraction(t *testing.T) {
 		t.Run("Credential format is jwt_vc_json-ld", func(t *testing.T) {
 			credentialOffer := createSampleCredentialOffer(t, true, true)
 
-			credentialOffer.Credentials[0].Format = "jwt_vc_json-ld"
-
 			credentialOfferBytes, err := json.Marshal(credentialOffer)
 			require.NoError(t, err)
 
@@ -287,10 +290,10 @@ func TestNewIssuerInitiatedInteraction(t *testing.T) {
 		require.EqualError(t, err, "no supported grant types found")
 		require.Nil(t, interaction)
 	})
-	t.Run("Unsupported credential type", func(t *testing.T) {
+	t.Run("Invalid credential configuration id", func(t *testing.T) {
 		credentialOffer := createSampleCredentialOffer(t, false, true)
 
-		credentialOffer.Credentials[0].Format = "UnsupportedType"
+		credentialOffer.CredentialConfigurationIDs = []string{"invalid_configuration_id"}
 
 		credentialOfferBytes, err := json.Marshal(credentialOffer)
 		require.NoError(t, err)
@@ -300,9 +303,8 @@ func TestNewIssuerInitiatedInteraction(t *testing.T) {
 		credentialOfferIssuanceURI := "openid-credential-offer://?credential_offer=" + credentialOfferEscaped
 
 		interaction, err := openid4ci.NewIssuerInitiatedInteraction(credentialOfferIssuanceURI, getTestClientConfig(t))
-		require.EqualError(t, err, "UNSUPPORTED_CREDENTIAL_TYPE_IN_OFFER(OCI0-0002):unsupported "+
-			"credential type (UnsupportedType) in credential offer at index 0 of credentials object "+
-			"(must be jwt_vc_json or jwt_vc_json-ld)")
+		require.EqualError(t, err, "INVALID_CREDENTIAL_CONFIGURATION_ID(OCI0-0022):invalid credential configuration "+
+			"ID (invalid_configuration_id) in credential offer")
 		require.Nil(t, interaction)
 	})
 	t.Run("Fail to log retrieving credential offer via HTTP GET metrics event", func(t *testing.T) {
@@ -1964,7 +1966,25 @@ func getTestClientConfig(t *testing.T) *openid4ci.ClientConfig {
 		DIDResolver:                      didResolver,
 		DisableVCProofChecks:             true,
 		NetworkDocumentLoaderHTTPTimeout: &networkDocumentLoaderHTTPTimeout,
+		HTTPClient: &http.Client{
+			Transport: &mockTransport{
+				roundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewBufferString(sampleIssuerMetadata)),
+					}, nil
+				},
+			},
+		},
 	}
+}
+
+type mockTransport struct {
+	roundTripFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m.roundTripFunc(req)
 }
 
 // makeMockDoc creates a key in the given KMS and returns a mock DID Doc with a verification method.

@@ -153,7 +153,7 @@ func (i *interaction) instantiateCodeVerifier() error {
 func (i *interaction) generateAuthorizationDetails(format string, types []string) ([]byte, error) {
 	// TODO: Add support for requesting multiple credentials at once (by sending an array).
 	// Currently we always use the first credential type specified in the offer.
-	authorizationDetailsDTO := &authorizationDetails{
+	authorizationDetailsDTO := authorizationDetails{
 		CredentialConfigurationID: "",
 		CredentialDefinition: &issuer.CredentialDefinition{
 			Context:           nil,
@@ -169,7 +169,7 @@ func (i *interaction) generateAuthorizationDetails(format string, types []string
 		authorizationDetailsDTO.Locations = []string{i.issuerMetadata.CredentialIssuer}
 	}
 
-	authorizationDetailsBytes, err := json.Marshal(authorizationDetailsDTO)
+	authorizationDetailsBytes, err := json.Marshal([]authorizationDetails{authorizationDetailsDTO})
 	if err != nil {
 		return nil, err
 	}
