@@ -12,6 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/trustbloc/did-go/doc/did/endpoint"
+	"github.com/trustbloc/kms-go/doc/jose/jwk"
+	"github.com/trustbloc/wallet-sdk/pkg/common"
+	"github.com/trustbloc/wallet-sdk/pkg/models"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -53,9 +57,6 @@ var (
 
 	//go:embed testdata/sample_credential_response_ask.json
 	sampleCredentialResponseAsk []byte
-
-	//go:embed testdata/sample_signed_issuer_metadata.json
-	sampleSignedIssuerMetadata string
 
 	//go:embed testdata/sample_issuer_metadata.json
 	sampleIssuerMetadata string
@@ -373,10 +374,11 @@ func TestNewIssuerInitiatedInteraction(t *testing.T) {
 
 type mockResolver struct {
 	keyWriter api.KeyWriter
+	pubJWK    *jwk.JWK
 }
 
 func (m *mockResolver) Resolve(string) (*did.DocResolution, error) {
-	didDoc, err := makeMockDoc(m.keyWriter)
+	didDoc, err := makeMockDoc(m.keyWriter, m.pubJWK)
 	if err != nil {
 		return nil, err
 	}
@@ -1891,7 +1893,7 @@ func TestIssuerInitiatedInteraction_VerifyIssuer(t *testing.T) {
 	t.Run("Resolved DID document has no Linked Domains services specified", func(t *testing.T) {
 		issuerServerHandler := &mockIssuerServerHandler{
 			t:              t,
-			issuerMetadata: sampleSignedIssuerMetadata,
+			issuerMetadata: `{"signed_metadata": "a.b"}`,
 		}
 
 		server := httptest.NewServer(issuerServerHandler)
@@ -1935,7 +1937,7 @@ func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
 	t.Run("Failed to get issuer metadata", func(t *testing.T) {
 		issuerServerHandler := &mockIssuerServerHandler{
 			t:              t,
-			issuerMetadata: `{"signed_metadata": "a.b"}`,
+			issuerMetadata: sampleIssuerMetadata,
 		}
 
 		server := httptest.NewServer(issuerServerHandler)
@@ -1952,8 +1954,7 @@ func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		issuerServerHandler := &mockIssuerServerHandler{
-			t:              t,
-			issuerMetadata: sampleSignedIssuerMetadata,
+			t: t,
 		}
 
 		server := httptest.NewServer(issuerServerHandler)
@@ -1961,10 +1962,39 @@ func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
 
 		config := getTestClientConfig(t)
 
-		didResolver, err := resolver.NewDIDResolver()
+		localKMS, err := localkms.NewLocalKMS(localkms.Config{Storage: localkms.NewMemKMSStore()})
 		require.NoError(t, err)
 
+		_, publicKey, err := localKMS.Create(arieskms.ED25519Type)
+
+		didResolver := &mockResolver{keyWriter: localKMS, pubJWK: publicKey}
+
 		config.DIDResolver = didResolver
+
+		didDocResolution, err := didResolver.Resolve("")
+		require.NoError(t, err)
+
+		verificationMethod := didDocResolution.DIDDocument.VerificationMethod[0]
+
+		signer, err := common.NewJWSSigner(models.VerificationMethodFromDoc(&verificationMethod), localKMS.GetCrypto())
+		require.NoError(t, err)
+
+		claims := map[string]interface{}{}
+
+		data := fmt.Sprintf(`{"well_known_openid_issuer_configuration": %s}`, sampleIssuerMetadata)
+		json.Unmarshal([]byte(data), &claims)
+
+		token, err := jwt.NewSigned(claims, jwt.SignParameters{
+			KeyID:             publicKey.KeyID,
+			JWTAlg:            "",
+			AdditionalHeaders: nil,
+		}, signer)
+		require.NoError(t, err)
+
+		tokenBytes, err := token.Serialize(false)
+		require.NoError(t, err)
+
+		issuerServerHandler.issuerMetadata = fmt.Sprintf(`{"signed_metadata": "%s"}`, tokenBytes)
 
 		credentialOfferIssuanceURI := createCredentialOfferIssuanceURI(t, server.URL, false, true)
 
@@ -2017,19 +2047,21 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // makeMockDoc creates a key in the given KMS and returns a mock DID Doc with a verification method.
-func makeMockDoc(keyWriter api.KeyWriter) (*did.Doc, error) {
-	_, pkJWK, err := keyWriter.Create(arieskms.ED25519Type)
-	if err != nil {
-		return nil, err
+func makeMockDoc(keyWriter api.KeyWriter, pubJWK *jwk.JWK) (*did.Doc, error) {
+	if pubJWK == nil {
+		var err error
+		_, pubJWK, err = keyWriter.Create(arieskms.ED25519Type)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	pkb, err := pkJWK.PublicKeyBytes()
+	pkb, err := pubJWK.PublicKeyBytes()
 	if err != nil {
 		return nil, err
 	}
 
 	vm := &did.VerificationMethod{
-		ID:         "#key-1",
+		ID:         pubJWK.KeyID,
 		Controller: mockDID,
 		Type:       "Ed25519VerificationKey2018",
 		Value:      pkb,
@@ -2045,6 +2077,13 @@ func makeMockDoc(keyWriter api.KeyWriter) (*did.Doc, error) {
 		},
 		VerificationMethod: []did.VerificationMethod{
 			*vm,
+		},
+		Service: []did.Service{
+			{
+				ID:              "#LinkedDomains",
+				Type:            "LinkedDomains",
+				ServiceEndpoint: endpoint.NewDIDCommV1Endpoint("https://demo-issuer.trustbloc.local:8078/"),
+			},
 		},
 	}
 
