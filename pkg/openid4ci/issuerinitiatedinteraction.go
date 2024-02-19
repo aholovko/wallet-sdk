@@ -98,7 +98,8 @@ func NewIssuerInitiatedInteraction(
 		httpClient:           config.HTTPClient,
 	}
 
-	if err := issuerInteraction.populateIssuerMetadata(getIssuerMetadataEventText); err != nil {
+	err = issuerInteraction.populateIssuerMetadata(getIssuerMetadataEventText)
+	if err != nil {
 		return nil, err
 	}
 

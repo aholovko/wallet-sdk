@@ -1,6 +1,6 @@
 {
-  "authorization_endpoint": "http://localhost:8075/oidc/authorize",
-  "credential_ack_endpoint": "http://localhost:8075/oidc/acknowledgement",
+  "authorization_endpoint": "[SERVER_URL]/oidc/authorize",
+  "credential_ack_endpoint": "[SERVER_URL]/oidc/ack_endpoint",
   "credential_configurations_supported": {
     "credential_configuration_id_1": {
       "claims": null,
@@ -159,7 +159,7 @@
       "vct": ""
     }
   },
-  "credential_endpoint": "http://localhost:8075/oidc/credential",
+  "credential_endpoint": "[SERVER_URL]/oidc/credential",
   "credential_issuer": "http://localhost:8075/issuer/bank_issuer/v1.0",
   "display": [
     {
@@ -172,7 +172,7 @@
     "authorization_code"
   ],
   "pre-authorized_grant_anonymous_access_supported": true,
-  "registration_endpoint": "http://localhost:8075/oidc/bank_issuer/v1.0/register",
+  "registration_endpoint": "[SERVER_URL]/oidc/bank_issuer/v1.0/register",
   "response_types_supported": [
     "code"
   ],
@@ -180,7 +180,7 @@
     "openid",
     "profile"
   ],
-  "token_endpoint": "http://localhost:8075/oidc/token",
+  "token_endpoint": "[SERVER_URL]/oidc/token",
   "token_endpoint_auth_methods_supported": [
     "none"
   ]

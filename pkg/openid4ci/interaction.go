@@ -246,6 +246,9 @@ func (i *interaction) requestAccessToken(redirectURIWithAuthCode string) error {
 
 	authTokenResponse, err := i.oAuth2Config.Exchange(ctx, parsedURI.Query().Get("code"),
 		oauth2.SetAuthURLParam("code_verifier", i.codeVerifier))
+	if err != nil {
+		return err
+	}
 
 	i.authToken = &universalAuthToken{
 		AccessToken:  authTokenResponse.AccessToken,
@@ -256,7 +259,7 @@ func (i *interaction) requestAccessToken(redirectURIWithAuthCode string) error {
 
 	i.authTokenResponseNonce = authTokenResponse.Extra("c_nonce")
 
-	return err
+	return nil
 }
 
 func (i *interaction) getTokenEndpoint() (string, error) {
