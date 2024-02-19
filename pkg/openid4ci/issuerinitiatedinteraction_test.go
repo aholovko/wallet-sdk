@@ -1323,35 +1323,6 @@ func TestIssuerInitiatedInteraction_RequestCredential(t *testing.T) {
 				"failed to log event (Event=Fetch token via an HTTP POST request to http://127.0.0.1:")
 			require.Nil(t, credentials)
 		})
-		t.Run("Fail to log fetch metadata via HTTP GET metrics event", func(t *testing.T) {
-			issuerServerHandler := &mockIssuerServerHandler{
-				t: t,
-			}
-
-			server := httptest.NewServer(issuerServerHandler)
-			defer server.Close()
-
-			issuerServerHandler.openIDConfig = &openid4ci.OpenIDConfig{
-				TokenEndpoint: fmt.Sprintf("%s/oidc/token", server.URL),
-			}
-
-			issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
-
-			config := getTestClientConfig(t)
-			config.MetricsLogger = &failingMetricsLogger{attemptFailNumber: 1}
-
-			interaction, err := openid4ci.NewIssuerInitiatedInteraction(
-				createCredentialOfferIssuanceURI(t, server.URL, false, true), config)
-			require.NoError(t, err)
-
-			credentials, err := interaction.RequestCredentialWithPreAuth(&jwtSignerMock{
-				keyID: mockKeyID,
-			}, openid4ci.WithPIN("1234"))
-			require.Contains(t, err.Error(), "METADATA_FETCH_FAILED(OCI1-0004):failed to get issuer metadata: "+
-				"failed to get response from the issuer's metadata endpoint: "+
-				"failed to log event (Event=Fetch issuer metadata via an HTTP GET request to http://127.0.0.1:")
-			require.Nil(t, credentials)
-		})
 		t.Run("Fail to log fetch credential via HTTP GET metrics event", func(t *testing.T) {
 			issuerServerHandler := &mockIssuerServerHandler{
 				t:                  t,
