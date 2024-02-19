@@ -1276,7 +1276,9 @@ func TestIssuerInitiatedInteraction_RequestCredential(t *testing.T) {
 				TokenEndpoint: fmt.Sprintf("%s/oidc/token", server.URL),
 			}
 
-			issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
+			issuerMetadata := strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
+
+			issuerServerHandler.issuerMetadata = removeTokenEndpointFromCredentialMetadata(t, issuerMetadata)
 
 			config := getTestClientConfig(t)
 			config.MetricsLogger = &failingMetricsLogger{attemptFailNumber: 2}
