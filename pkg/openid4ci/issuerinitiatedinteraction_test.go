@@ -12,10 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/trustbloc/did-go/doc/did/endpoint"
-	"github.com/trustbloc/kms-go/doc/jose/jwk"
-	"github.com/trustbloc/wallet-sdk/pkg/common"
-	"github.com/trustbloc/wallet-sdk/pkg/models"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,12 +26,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/did-go/doc/did"
+	"github.com/trustbloc/did-go/doc/did/endpoint"
 	"github.com/trustbloc/kms-go/doc/jose"
+	"github.com/trustbloc/kms-go/doc/jose/jwk"
 	arieskms "github.com/trustbloc/kms-go/spi/kms"
 
 	"github.com/trustbloc/wallet-sdk/internal/testutil"
 	"github.com/trustbloc/wallet-sdk/pkg/api"
+	"github.com/trustbloc/wallet-sdk/pkg/common"
 	"github.com/trustbloc/wallet-sdk/pkg/localkms"
+	"github.com/trustbloc/wallet-sdk/pkg/models"
 	"github.com/trustbloc/wallet-sdk/pkg/models/issuer"
 	"github.com/trustbloc/wallet-sdk/pkg/openid4ci"
 )
@@ -193,11 +193,21 @@ func (f *failingMetricsLogger) Log(metricsEvent *api.MetricsEvent) error {
 
 func TestNewIssuerInitiatedInteraction(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
+		issuerServerHandler := &mockIssuerServerHandler{t: t, credentialResponse: sampleCredentialResponse}
+		server := httptest.NewServer(issuerServerHandler)
+		defer server.Close()
+
+		issuerServerHandler.openIDConfig = &openid4ci.OpenIDConfig{
+			TokenEndpoint: fmt.Sprintf("%s/oidc/token", server.URL),
+		}
+
+		issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
+
 		t.Run("Credential format is jwt_vc_json", func(t *testing.T) {
-			newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, "example.com", false, true))
+			newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, server.URL, false, true))
 		})
 		t.Run("Credential format is jwt_vc_json-ld", func(t *testing.T) {
-			credentialOffer := createSampleCredentialOffer(t, true, true)
+			credentialOffer := createCredentialOffer(t, server.URL, true, true)
 
 			credentialOfferBytes, err := json.Marshal(credentialOffer)
 			require.NoError(t, err)
@@ -446,15 +456,6 @@ func TestIssuerInitiatedInteraction_CreateAuthorizationURL(t *testing.T) {
 				"A%2F%2Flocalhost%3A8075%2Fissuer%2Fbank_issuer%2Fv1.0%22%5D%2C%22type%22%3A%22openid_credential%22%7D%"+
 				"5D&client_id=clientID")
 		})
-	})
-	t.Run("Fail to get issuer metadata", func(t *testing.T) {
-		interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, "example.com", true, true))
-
-		authorizationURL, err := interaction.CreateAuthorizationURL("clientID", "redirectURI")
-		require.EqualError(t, err, "METADATA_FETCH_FAILED(OCI1-0004):failed to get issuer metadata: "+
-			"failed to get response from the issuer's metadata endpoint: "+
-			`Get "example.com/.well-known/openid-credential-issuer": unsupported protocol scheme ""`)
-		require.Empty(t, authorizationURL)
 	})
 }
 
