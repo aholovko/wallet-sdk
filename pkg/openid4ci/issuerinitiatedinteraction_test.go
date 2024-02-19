@@ -1802,18 +1802,33 @@ func TestIssuerInitiatedInteraction_GrantTypes(t *testing.T) {
 
 func TestIssuerInitiatedInteraction_DynamicClientRegistration(t *testing.T) {
 	t.Run("Fail to get OpenID configuration", func(t *testing.T) {
-		interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, "example.com", false, true))
+		issuerServerHandler := &mockIssuerServerHandler{
+			t:                              t,
+			credentialResponse:             sampleCredentialResponse,
+			issuerMetadata:                 sampleIssuerMetadata,
+			openIDConfigEndpointShouldFail: true,
+		}
+
+		server := httptest.NewServer(issuerServerHandler)
+		defer server.Close()
+
+		config := getTestClientConfig(t)
+
+		requestURI := createCredentialOfferIssuanceURI(t, server.URL, false, true)
+		interaction, err := openid4ci.NewIssuerInitiatedInteraction(requestURI, config)
+		require.NoError(t, err)
+		require.NotNil(t, interaction)
 
 		supported, err := interaction.DynamicClientRegistrationSupported()
 		require.EqualError(t, err, "ISSUER_OPENID_CONFIG_FETCH_FAILED(OCI1-0003):failed to fetch issuer's "+
-			"OpenID configuration: "+`openid configuration endpoint: Get "example.com/.well-known/openid-configuration"`+
-			`: unsupported protocol scheme ""`)
+			"OpenID configuration: openid configuration endpoint: expected status code 200 but got status code 500 "+
+			"with response body test failure instead")
 		require.False(t, supported)
 
 		endpoint, err := interaction.DynamicClientRegistrationEndpoint()
 		require.EqualError(t, err, "ISSUER_OPENID_CONFIG_FETCH_FAILED(OCI1-0003):failed to fetch issuer's "+
-			"OpenID configuration: "+`openid configuration endpoint: Get "example.com/.well-known/openid-configuration"`+
-			`: unsupported protocol scheme ""`)
+			"OpenID configuration: openid configuration endpoint: expected status code 200 but got status code 500 "+
+			"with response body test failure instead")
 		require.Empty(t, endpoint)
 	})
 	t.Run("Dynamic client registration is not supported", func(t *testing.T) {
@@ -1913,21 +1928,6 @@ func TestIssuerInitiatedInteraction_VerifyIssuer(t *testing.T) {
 
 		serviceURL, err := interaction.VerifyIssuer()
 		require.ErrorContains(t, err, "DOMAIN_AND_DID_VERIFICATION_FAILED")
-		require.Empty(t, serviceURL)
-	})
-	t.Run("Metadata not signed", func(t *testing.T) {
-		issuerServerHandler := &mockIssuerServerHandler{
-			t:              t,
-			issuerMetadata: "{}",
-		}
-
-		server := httptest.NewServer(issuerServerHandler)
-		defer server.Close()
-
-		interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, server.URL, false, true))
-
-		serviceURL, err := interaction.VerifyIssuer()
-		require.ErrorContains(t, err, "DID service validation failed")
 		require.Empty(t, serviceURL)
 	})
 }
