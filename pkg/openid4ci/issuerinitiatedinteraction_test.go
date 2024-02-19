@@ -1864,12 +1864,27 @@ func TestIssuerInitiatedInteraction_DynamicClientRegistration(t *testing.T) {
 }
 
 func TestIssuerInitiatedInteraction_IssuerURI(t *testing.T) {
-	testIssuerURI := "https://example.com"
-	requestURI := createCredentialOfferIssuanceURI(t, testIssuerURI, false, true)
+	issuerServerHandler := &mockIssuerServerHandler{
+		t:                  t,
+		credentialResponse: sampleCredentialResponse,
+	}
 
-	interaction := newIssuerInitiatedInteraction(t, requestURI)
+	server := httptest.NewServer(issuerServerHandler)
+	defer server.Close()
 
-	require.Equal(t, testIssuerURI, interaction.IssuerURI())
+	issuerServerHandler.openIDConfig = &openid4ci.OpenIDConfig{
+		TokenEndpoint: fmt.Sprintf("%s/oidc/token", server.URL),
+	}
+
+	issuerServerHandler.issuerMetadata = strings.ReplaceAll(sampleIssuerMetadata, serverURLPlaceholder, server.URL)
+
+	config := getTestClientConfig(t)
+
+	interaction, err := openid4ci.NewIssuerInitiatedInteraction(
+		createCredentialOfferIssuanceURI(t, server.URL, false, true), config)
+	require.NoError(t, err)
+
+	require.Equal(t, server.URL, interaction.IssuerURI())
 }
 
 func TestIssuerInitiatedInteraction_VerifyIssuer(t *testing.T) {
@@ -1934,24 +1949,6 @@ func TestIssuerInitiatedInteraction_VerifyIssuer(t *testing.T) {
 }
 
 func TestIssuerInitiatedInteraction_IssuerTrustInfo(t *testing.T) {
-	t.Run("Failed to get issuer metadata", func(t *testing.T) {
-		issuerServerHandler := &mockIssuerServerHandler{
-			t:              t,
-			issuerMetadata: sampleIssuerMetadata,
-		}
-
-		server := httptest.NewServer(issuerServerHandler)
-		defer server.Close()
-
-		interaction := newIssuerInitiatedInteraction(t, createCredentialOfferIssuanceURI(t, server.URL, false, true))
-
-		trustInfo, err := interaction.IssuerTrustInfo()
-		require.EqualError(t, err, "METADATA_FETCH_FAILED(OCI1-0004):failed to get issuer metadata: "+
-			"failed to parse the response from the issuer's OpenID Credential Issuer endpoint as JSON or "+
-			"as a JWT: JWT of compacted JWS form is supported only")
-		require.Nil(t, trustInfo)
-	})
-
 	t.Run("Success", func(t *testing.T) {
 		issuerServerHandler := &mockIssuerServerHandler{
 			t: t,
